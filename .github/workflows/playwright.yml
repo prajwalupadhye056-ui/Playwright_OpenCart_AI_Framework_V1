@@ -18,10 +18,11 @@ on:
           - test:sanity
           - test:regression
           - test:end-to-end
+          - test:awesomeqa
           - test:api
           - test:web
           - test:datadriven
-        default: "test:end-to-end"
+        default: "test:awesomeqa"
       browser:
         description: "Select browser"
         type: choice
@@ -58,12 +59,12 @@ jobs:
       - name: 🎭 Install Playwright Browsers
         run: npx playwright install --with-deps
 
-      - name: ⚙️ Create .env File
-        run: Copy-Item .env.example .env
+      # - name: ⚙️ Create .env File
+      #   run: Copy-Item .env.example .env
 
       - name: 🧪 Run Playwright Tests
         run: |
-          $suite = "${{ github.event.inputs.test_suite || 'test:end-to-end' }}"
+          $suite = "${{ github.event.inputs.test_suite || 'test:awesomeqa' }}"
           $browser = "${{ github.event.inputs.browser || 'chromium' }}"
           $mode = "${{ github.event.inputs.mode || 'headless' }}"
           $tag = $suite -replace 'test:', ''
@@ -72,6 +73,7 @@ jobs:
           npx playwright test --grep "@$tag" $browserFlag $modeFlag --output=test-results
         env:
           CI: "1"
+          WEB_APP_URL: "https://awesomeqa.com/ui/"
 
       - name: 📊 Upload Playwright HTML Report
         if: always()

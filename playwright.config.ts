@@ -25,7 +25,7 @@ export default defineConfig({
       // permissions: ["geolocation"], // Set necessary permissions for geolocation-based 
       // tests
     },
-    grep: /@master/, 
+    //grep: /@master/, 
     projects: [
       {
         name: "chromium", 
