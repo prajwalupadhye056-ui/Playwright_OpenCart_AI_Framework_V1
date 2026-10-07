@@ -16,7 +16,8 @@ import { AdminCustomerEditPage } from '../pages/AdminCustomerEditPage';
 
 dotenv.config();
 
-const APP_URL = process.env.WEB_APP_URL || 'http://localhost/opencart/upload/';
+const APP_URL =
+    process.env.WEB_APP_URL || 'http://localhost/opencart/upload/';
 
 type PageFixtures = {
     homePage: HomePage;
@@ -34,40 +35,57 @@ type PageFixtures = {
 };
 
 export const test = base.extend<PageFixtures>({
+
     homePage: async ({ page }, use) => {
-        await page.goto(APP_URL);
+
+         await page.goto(APP_URL, {
+            waitUntil: 'domcontentloaded',
+        });
+
+       
         await use(new HomePage(page));
     },
+
     registerPage: async ({ page }, use) => {
         await use(new RegisterPage(page));
     },
+
     loginPage: async ({ page }, use) => {
         await use(new LoginPage(page));
     },
+
     myAccountPage: async ({ page }, use) => {
         await use(new MyAccountPage(page));
     },
+
     successPage: async ({ page }, use) => {
         await use(new SuccessPage(page));
     },
+
     logoutPage: async ({ page }, use) => {
         await use(new LogoutPage(page));
     },
+
     searchResultsPage: async ({ page }, use) => {
         await use(new SearchResultsPage(page));
     },
+
     productPage: async ({ page }, use) => {
         await use(new ProductPage(page));
     },
+
     cartPage: async ({ page }, use) => {
         await use(new CartPage(page));
     },
+
     adminLoginPage: async ({ page }, use) => {
         await use(new AdminLoginPage(page));
     },
+
     adminCustomersPage: async ({ page }, use) => {
         await use(new AdminCustomersPage(page));
     },
+
     adminCustomerEditPage: async ({ page }, use) => {
         await use(new AdminCustomerEditPage(page));
     },
