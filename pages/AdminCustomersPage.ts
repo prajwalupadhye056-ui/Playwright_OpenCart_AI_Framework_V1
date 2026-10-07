@@ -95,8 +95,24 @@ export class AdminCustomersPage {
      */
     async searchCustomerByEmail(email: string): Promise<void> {
         await this.setFilterEmail(email);
+
         await this.clickFilterButton();
-    }
+
+         await this.page.waitForLoadState('domcontentloaded');
+
+    console.log('Admin URL after filter:', this.page.url());
+    console.log('Filter value after click:', await this.filterEmailInput.inputValue());
+
+    const rowCount = await this.customersTable.locator('tbody tr').count();
+    console.log('Customer table row count:', rowCount);
+
+    const tableText = await this.customersTable.innerText().catch(() => '');
+    console.log('Customer table text:', tableText);
+
+    const noResults = await this.isNoResultsAlertVisible();
+    console.log('No results alert visible:', noResults);
+}
+    
 
     /**
      * Checks if a customer row exists for the given email

@@ -53,8 +53,11 @@ test.describe('OpenCart Customer Registration - UI + Admin + DB Validation @mast
             expect(isLoginPage, 'Admin login page should be displayed').toBeTruthy();
 
             await adminLoginPage.login(ADMIN_USERNAME, ADMIN_PASSWORD);
+ 
+            await page.waitForURL(/route=common\/dashboard/,{ timeout: 15000 });          
 
-            await page.waitForURL(/route=common\/dashboard/);
+            console.log('Current Admin URL:', page.url());
+            console.log('Current Admin Title:', await page.title());
 
             await adminCustomersPage.dismissSecurityModal();
 

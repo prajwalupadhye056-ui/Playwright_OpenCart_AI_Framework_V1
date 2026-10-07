@@ -24,7 +24,7 @@ export class RegisterPage {
         this.telephoneInput = page.locator('#input-telephone');
         this.passwordInput = page.locator('#input-password');
         this.passwordConfirmInput = page.locator('#input-confirm');
-        this.privacyPolicyCheckbox = page.locator('input[type="checkbox"][name="agree"]');
+        this.privacyPolicyCheckbox = page.locator('input[name="agree"]')
         this.continueButton = page.getByRole('button', { name: 'Continue' });
         this.registerHeading = page.getByRole('heading', { name: 'Register Account' });
     }
@@ -96,6 +96,7 @@ export class RegisterPage {
      * Checks the Privacy Policy checkbox
      */
     async acceptPrivacyPolicy(): Promise<void> {
+        await this.privacyPolicyCheckbox.scrollIntoViewIfNeeded();
         await this.privacyPolicyCheckbox.check();
     }
 
@@ -104,6 +105,8 @@ export class RegisterPage {
      */
     async clickContinue(): Promise<void> {
         await this.continueButton.click();
+
+         
     }
 
     /**
