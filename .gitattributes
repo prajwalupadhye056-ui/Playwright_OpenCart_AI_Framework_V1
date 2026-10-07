@@ -1,0 +1,6 @@
+* text=auto
+
+docker-entry.point.sh text eol=lf
+DockerFile            text eol=lf
+*.sh                  text eol=lf
+*.bash                text eol=lf
