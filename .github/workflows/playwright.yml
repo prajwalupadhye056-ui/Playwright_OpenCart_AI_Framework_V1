@@ -1,13 +1,12 @@
-#To run manually: go to your repo → Actions → Playwright Tests → Run workflow → 
-#choose your parameters → Run.
-
 name: 🎭 Playwright Tests
 
 on:
   push:
     branches: [master]
+
   pull_request:
     branches: [master]
+
   workflow_dispatch:
     inputs:
       test_suite:
@@ -22,6 +21,7 @@ on:
           - test:web
           - test:datadriven
         default: "test:end-to-end"
+
       browser:
         description: "Select browser"
         type: choice
@@ -30,6 +30,7 @@ on:
           - firefox
           - webkit
         default: "chromium"
+
       mode:
         description: "Run mode"
         type: choice
@@ -38,48 +39,650 @@ on:
           - headed
         default: "headless"
 
+
 jobs:
+
   test:
-    timeout-minutes: 60
+
     runs-on: windows-latest
 
+    timeout-minutes: 60
+
     steps:
+
+      # =========================================================
+      # 1. CHECKOUT
+      # =========================================================
+
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+
+
+      # =========================================================
+      # 2. NODE.JS
+      # =========================================================
 
       - name: 🟢 Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: 22
+          cache: npm
+
+
+      # =========================================================
+      # 3. NODE DEPENDENCIES
+      # =========================================================
 
       - name: 📦 Install Dependencies
         run: npm ci
 
-      - name: 🎭 Install Playwright Browsers
-        run: npx playwright install --with-deps
 
-      - name: ⚙️ Create .env File
-        run: Copy-Item .env.example .env
+      # =========================================================
+      # 4. VERIFY DOCKER
+      # =========================================================
+
+      - name: 🐳 Verify Docker
+        shell: pwsh
+        run: |
+          docker --version
+          docker info
+          docker compose version
+
+
+      # =========================================================
+      # 5. CREATE DOCKER NETWORK
+      # =========================================================
+
+      - name: 🐳 Create CI Network
+        shell: pwsh
+        run: |
+          docker network create opencart-ci-network
+
+
+      # =========================================================
+      # 6. START MYSQL
+      #
+      # Database:
+      #   openshop
+      #
+      # Root password:
+      #   root
+      #
+      # SQL:
+      #   database/opencart.sql
+      # =========================================================
+
+      - name: 🗄️ Start MySQL
+        shell: pwsh
+        run: |
+
+          docker run -d `
+            --name opencart-mysql `
+            --network opencart-ci-network `
+            -e MYSQL_ROOT_PASSWORD=root `
+            -e MYSQL_DATABASE=openshop `
+            -p 3306:3306 `
+            -v "${{ github.workspace }}\database\opencart.sql:/docker-entrypoint-initdb.d/01-opencart.sql:ro" `
+            mysql:8.0
+
+
+      # =========================================================
+      # 7. WAIT FOR MYSQL
+      # =========================================================
+
+      - name: ⏳ Wait for MySQL
+        shell: pwsh
+        run: |
+
+          Write-Host "Waiting for MySQL..."
+
+          $mysqlReady = $false
+
+          for ($i = 1; $i -le 60; $i++) {
+
+            docker exec opencart-mysql `
+              mysqladmin ping `
+              -uroot `
+              -proot `
+              --silent
+
+            if ($LASTEXITCODE -eq 0) {
+
+              Write-Host "MySQL server is ready."
+
+              $mysqlReady = $true
+              break
+            }
+
+            Write-Host "MySQL not ready. Attempt $i/60"
+            Start-Sleep -Seconds 2
+          }
+
+          if (-not $mysqlReady) {
+
+            Write-Host "MySQL failed to start."
+
+            docker logs opencart-mysql
+
+            exit 1
+          }
+
+
+      # =========================================================
+      # 8. WAIT FOR OPENCART TABLES
+      #
+      # This confirms the SQL import has completed.
+      # =========================================================
+
+      - name: ⏳ Wait for OpenCart Database
+        shell: pwsh
+        run: |
+
+          Write-Host "Waiting for OpenCart database tables..."
+
+          $databaseReady = $false
+
+          for ($i = 1; $i -le 60; $i++) {
+
+            $result = docker exec opencart-mysql `
+              mysql `
+              -uroot `
+              -proot `
+              openshop `
+              -N `
+              -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='openshop' AND table_name='oc_customer';"
+
+            Write-Host "oc_customer table check: $result"
+
+            if ($result -eq "1") {
+
+              Write-Host "OpenCart database import completed."
+
+              $databaseReady = $true
+              break
+            }
+
+            Write-Host "Database import still running..."
+            Start-Sleep -Seconds 2
+          }
+
+          if (-not $databaseReady) {
+
+            Write-Host "OpenCart database was not initialized correctly."
+
+            docker logs opencart-mysql
+
+            exit 1
+          }
+
+
+      # =========================================================
+      # 9. DISPLAY DATABASE TABLES
+      # =========================================================
+
+      - name: 🔍 Verify OpenCart Tables
+        shell: pwsh
+        run: |
+
+          docker exec opencart-mysql `
+            mysql `
+            -uroot `
+            -proot `
+            openshop `
+            -e "SHOW TABLES;"
+
+
+      # =========================================================
+      # 10. CREATE PHP + APACHE IMAGE
+      #
+      # OpenCart 3.0.5.0
+      # PHP 8.4
+      # Apache
+      # =========================================================
+
+      - name: 🐘 Build OpenCart PHP Apache Image
+        shell: pwsh
+        run: |
+
+          @"
+          FROM php:8.4-apache
+
+          RUN apt-get update \
+              && apt-get install -y \
+                  libfreetype6-dev \
+                  libjpeg62-turbo-dev \
+                  libpng-dev \
+                  libzip-dev \
+                  libicu-dev \
+                  libonig-dev \
+              && docker-php-ext-configure gd \
+                  --with-freetype \
+                  --with-jpeg \
+              && docker-php-ext-install \
+                  mysqli \
+                  pdo \
+                  pdo_mysql \
+                  gd \
+                  curl \
+                  mbstring \
+                  zip \
+                  intl \
+              && a2enmod rewrite \
+              && rm -rf /var/lib/apt/lists/*
+
+          WORKDIR /var/www/html
+          "@ | Out-File -Encoding ascii Dockerfile.opencart
+
+          docker build `
+            -f Dockerfile.opencart `
+            -t opencart-ci:3.0.5.0 .
+
+
+      # =========================================================
+      # 11. CREATE CI STORAGE FOLDERS
+      # =========================================================
+
+      - name: 📁 Prepare OpenCart Storage
+        shell: pwsh
+        run: |
+
+          New-Item -ItemType Directory -Force `
+            "ci-storage/cache"
+
+          New-Item -ItemType Directory -Force `
+            "ci-storage/download"
+
+          New-Item -ItemType Directory -Force `
+            "ci-storage/logs"
+
+          New-Item -ItemType Directory -Force `
+            "ci-storage/modification"
+
+          New-Item -ItemType Directory -Force `
+            "ci-storage/session"
+
+          New-Item -ItemType Directory -Force `
+            "ci-storage/upload"
+
+
+      # =========================================================
+      # 12. GENERATE CI CONFIG.PHP
+      #
+      # DO NOT use your local H:/Xampp paths.
+      # =========================================================
+
+      - name: ⚙️ Configure OpenCart Catalog
+        shell: pwsh
+        run: |
+
+          @'
+          <?php
+
+          // HTTP
+          define('HTTP_SERVER', 'http://localhost/opencart/upload/');
+          define('HTTPS_SERVER', 'http://localhost/opencart/upload/');
+
+          // DIR
+          define('DIR_APPLICATION', '/var/www/html/opencart/upload/catalog/');
+          define('DIR_SYSTEM', '/var/www/html/opencart/upload/system/');
+          define('DIR_IMAGE', '/var/www/html/opencart/upload/image/');
+          define('DIR_STORAGE', '/var/www/html/storage/');
+          define('DIR_LANGUAGE', DIR_APPLICATION . 'language/');
+          define('DIR_TEMPLATE', DIR_APPLICATION . 'view/theme/');
+          define('DIR_CONFIG', DIR_SYSTEM . 'config/');
+          define('DIR_CACHE', DIR_STORAGE . 'cache/');
+          define('DIR_DOWNLOAD', DIR_STORAGE . 'download/');
+          define('DIR_LOGS', DIR_STORAGE . 'logs/');
+          define('DIR_MODIFICATION', DIR_STORAGE . 'modification/');
+          define('DIR_SESSION', DIR_STORAGE . 'session/');
+          define('DIR_UPLOAD', DIR_STORAGE . 'upload/');
+
+          // DB
+          define('DB_DRIVER', 'mysqli');
+          define('DB_HOSTNAME', 'opencart-mysql');
+          define('DB_USERNAME', 'root');
+          define('DB_PASSWORD', 'root');
+          define('DB_DATABASE', 'openshop');
+          define('DB_PORT', '3306');
+          define('DB_PREFIX', 'oc_');
+
+          '@ | Set-Content `
+            "opencart\upload\config.php" `
+            -Encoding UTF8
+
+
+      # =========================================================
+      # 13. GENERATE CI ADMIN CONFIG.PHP
+      # =========================================================
+
+      - name: ⚙️ Configure OpenCart Admin
+        shell: pwsh
+        run: |
+
+          @'
+          <?php
+
+          // HTTP
+          define('HTTP_SERVER', 'http://localhost/opencart/upload/admin/');
+          define('HTTP_CATALOG', 'http://localhost/opencart/upload/');
+
+          // HTTPS
+          define('HTTPS_SERVER', 'http://localhost/opencart/upload/admin/');
+          define('HTTPS_CATALOG', 'http://localhost/opencart/upload/');
+
+          // DIR
+          define('DIR_APPLICATION', '/var/www/html/opencart/upload/admin/');
+          define('DIR_SYSTEM', '/var/www/html/opencart/upload/system/');
+          define('DIR_IMAGE', '/var/www/html/opencart/upload/image/');
+          define('DIR_STORAGE', '/var/www/html/storage/');
+          define('DIR_CATALOG', '/var/www/html/opencart/upload/catalog/');
+          define('DIR_LANGUAGE', DIR_APPLICATION . 'language/');
+          define('DIR_TEMPLATE', DIR_APPLICATION . 'view/template/');
+          define('DIR_CONFIG', DIR_SYSTEM . 'config/');
+          define('DIR_CACHE', DIR_STORAGE . 'cache/');
+          define('DIR_DOWNLOAD', DIR_STORAGE . 'download/');
+          define('DIR_LOGS', DIR_STORAGE . 'logs/');
+          define('DIR_MODIFICATION', DIR_STORAGE . 'modification/');
+          define('DIR_SESSION', DIR_STORAGE . 'session/');
+          define('DIR_UPLOAD', DIR_STORAGE . 'upload/');
+
+          // DB
+          define('DB_DRIVER', 'mysqli');
+          define('DB_HOSTNAME', 'opencart-mysql');
+          define('DB_USERNAME', 'root');
+          define('DB_PASSWORD', 'root');
+          define('DB_DATABASE', 'openshop');
+          define('DB_PORT', '3306');
+          define('DB_PREFIX', 'oc_');
+
+          // OpenCart API
+          define('OPENCART_SERVER', 'https://www.opencart.com/');
+
+          '@ | Set-Content `
+            "opencart\upload\admin\config.php" `
+            -Encoding UTF8
+
+
+      # =========================================================
+      # 14. START APACHE + OPENCART
+      # =========================================================
+
+      - name: 🌐 Start OpenCart Apache
+        shell: pwsh
+        run: |
+
+          docker run -d `
+            --name opencart-web `
+            --network opencart-ci-network `
+            -p 80:80 `
+            -v "${{ github.workspace }}\opencart:/var/www/html/opencart" `
+            -v "${{ github.workspace }}\ci-storage:/var/www/html/storage" `
+            opencart-ci:3.0.5.0
+
+
+      # =========================================================
+      # 15. SET PERMISSIONS
+      # =========================================================
+
+      - name: 🔐 Set OpenCart Permissions
+        shell: pwsh
+        run: |
+
+          docker exec opencart-web `
+            bash -c "chown -R www-data:www-data /var/www/html/opencart /var/www/html/storage && chmod -R 775 /var/www/html/storage"
+
+
+      # =========================================================
+      # 16. SHOW CONTAINER STATUS
+      # =========================================================
+
+      - name: 🔍 Check Docker Containers
+        shell: pwsh
+        run: |
+
+          docker ps -a
+
+          Write-Host ""
+          Write-Host "OpenCart container logs:"
+          docker logs opencart-web
+
+
+      # =========================================================
+      # 17. VERIFY PHP
+      # =========================================================
+
+      - name: 🐘 Verify PHP
+        shell: pwsh
+        run: |
+
+          docker exec opencart-web php -v
+
+          Write-Host ""
+          Write-Host "PHP extensions:"
+
+          docker exec opencart-web php -m
+
+
+      # =========================================================
+      # 18. VERIFY OPENCART CONFIGURATION
+      # =========================================================
+
+      - name: 🔍 Verify OpenCart Configuration
+        shell: pwsh
+        run: |
+
+          docker exec opencart-web `
+            bash -c "grep -E 'HTTP_SERVER|DIR_STORAGE|DB_HOSTNAME|DB_USERNAME|DB_DATABASE|DB_PORT|DB_PREFIX' /var/www/html/opencart/upload/config.php"
+
+          Write-Host ""
+
+          docker exec opencart-web `
+            bash -c "grep -E 'HTTP_SERVER|HTTP_CATALOG|DIR_STORAGE|DB_HOSTNAME|DB_USERNAME|DB_DATABASE|DB_PORT|DB_PREFIX' /var/www/html/opencart/upload/admin/config.php"
+
+
+      # =========================================================
+      # 19. WAIT FOR OPENCART
+      # =========================================================
+
+      - name: ⏳ Wait for OpenCart
+        shell: pwsh
+        run: |
+
+          Write-Host "Waiting for OpenCart..."
+
+          $ready = $false
+
+          for ($i = 1; $i -le 60; $i++) {
+
+            try {
+
+              $response = Invoke-WebRequest `
+                -Uri "http://localhost/opencart/upload/" `
+                -UseBasicParsing `
+                -TimeoutSec 10
+
+              Write-Host "HTTP STATUS: $($response.StatusCode)"
+
+              if ($response.StatusCode -ge 200 -and `
+                  $response.StatusCode -lt 500) {
+
+                $ready = $true
+                break
+              }
+
+            }
+            catch {
+
+              Write-Host "OpenCart not ready. Attempt $i/60"
+              Write-Host $_.Exception.Message
+            }
+
+            Start-Sleep -Seconds 2
+          }
+
+          if (-not $ready) {
+
+            Write-Host "OpenCart failed to respond."
+
+            Write-Host ""
+            Write-Host "Apache/OpenCart logs:"
+            docker logs opencart-web
+
+            exit 1
+          }
+
+          Write-Host "✅ OpenCart is available."
+
+
+      # =========================================================
+      # 20. VERIFY ADMIN URL
+      # =========================================================
+
+      - name: 🔐 Verify OpenCart Admin
+        shell: pwsh
+        run: |
+
+          try {
+
+            $response = Invoke-WebRequest `
+              -Uri "http://localhost/opencart/upload/admin/" `
+              -UseBasicParsing `
+              -TimeoutSec 10
+
+            Write-Host "Admin HTTP STATUS: $($response.StatusCode)"
+
+          }
+          catch {
+
+            Write-Host "Admin request returned an error:"
+            Write-Host $_.Exception.Message
+
+            Write-Host ""
+            Write-Host "OpenCart logs:"
+            docker logs opencart-web
+
+            exit 1
+          }
+
+
+      # =========================================================
+      # 21. CREATE PLAYWRIGHT .ENV
+      # =========================================================
+
+      - name: ⚙️ Create CI Environment
+        shell: pwsh
+        run: |
+
+          if (Test-Path ".env.example") {
+
+            Copy-Item ".env.example" ".env" -Force
+
+          }
+          else {
+
+            New-Item ".env" -ItemType File -Force
+          }
+
+          Add-Content ".env" ""
+          Add-Content ".env" "WEB_APP_URL=http://localhost/opencart/upload/"
+          Add-Content ".env" "ADMIN_URL=http://localhost/opencart/upload/admin/"
+          Add-Content ".env" "DB_HOST=127.0.0.1"
+          Add-Content ".env" "DB_PORT=3306"
+          Add-Content ".env" "DB_USERNAME=root"
+          Add-Content ".env" "DB_PASSWORD=root"
+          Add-Content ".env" "DB_DATABASE=openshop"
+          Add-Content ".env" "DB_PREFIX=oc_"
+
+
+      # =========================================================
+      # 22. INSTALL PLAYWRIGHT BROWSER
+      # =========================================================
+
+      - name: 🎭 Install Playwright Chromium
+        run: npx playwright install chromium
+
+
+      # =========================================================
+      # 23. RUN PLAYWRIGHT
+      # =========================================================
 
       - name: 🧪 Run Playwright Tests
+        shell: pwsh
+        env:
+          CI: "1"
         run: |
+
           $suite = "${{ github.event.inputs.test_suite || 'test:end-to-end' }}"
           $browser = "${{ github.event.inputs.browser || 'chromium' }}"
           $mode = "${{ github.event.inputs.mode || 'headless' }}"
+
           $tag = $suite -replace 'test:', ''
+
+          Write-Host "=========================================="
+          Write-Host "Playwright CI Configuration"
+          Write-Host "=========================================="
+          Write-Host "Suite   : $suite"
+          Write-Host "Tag     : @$tag"
+          Write-Host "Browser : $browser"
+          Write-Host "Mode    : $mode"
+          Write-Host "=========================================="
+
+
           $browserFlag = "--project=$browser"
-          $modeFlag = if ($mode -eq 'headed') { '--headed' } else { '' }
-          npx playwright test --grep "@$tag" $browserFlag $modeFlag --output=test-results
-        env:
-          CI: "1"
+
+          if ($mode -eq "headed") {
+
+            Write-Host "Running in headed mode."
+
+            npx playwright test `
+              --grep "@$tag" `
+              $browserFlag `
+              --headed `
+              --output=test-results
+
+          }
+          else {
+
+            Write-Host "Running in headless mode."
+
+            npx playwright test `
+              --grep "@$tag" `
+              $browserFlag `
+              --output=test-results
+          }
+
+
+      # =========================================================
+      # 24. UPLOAD PLAYWRIGHT REPORT
+      # =========================================================
 
       - name: 📊 Upload Playwright HTML Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: reports/
+          path: playwright-report/
+          if-no-files-found: ignore
           retention-days: 30
+
+
+      # =========================================================
+      # 25. UPLOAD TEST RESULTS
+      # =========================================================
+
+      - name: 📋 Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 30
+
+
+      # =========================================================
+      # 26. UPLOAD CUSTOM REPORT
+      # =========================================================
 
       - name: 📋 Upload Custom Report
         if: always()
@@ -87,7 +690,13 @@ jobs:
         with:
           name: custom-report
           path: custom-report/
+          if-no-files-found: ignore
           retention-days: 30
+
+
+      # =========================================================
+      # 27. UPLOAD ALLURE RESULTS
+      # =========================================================
 
       - name: 📈 Upload Allure Results
         if: always()
@@ -95,5 +704,43 @@ jobs:
         with:
           name: allure-results
           path: allure-results/
+          if-no-files-found: ignore
           retention-days: 30
 
+
+      # =========================================================
+      # 28. COLLECT LOGS IF FAILURE
+      # =========================================================
+
+      - name: 🐳 Collect Docker Logs
+        if: failure()
+        shell: pwsh
+        run: |
+
+          Write-Host "=========================================="
+          Write-Host "OpenCart Web Logs"
+          Write-Host "=========================================="
+
+          docker logs opencart-web 2>$null
+
+
+          Write-Host ""
+          Write-Host "=========================================="
+          Write-Host "MySQL Logs"
+          Write-Host "=========================================="
+
+          docker logs opencart-mysql 2>$null
+
+
+      # =========================================================
+      # 29. CLEANUP
+      # =========================================================
+
+      - name: 🧹 Cleanup Docker
+        if: always()
+        shell: pwsh
+        run: |
+
+          docker rm -f opencart-web 2>$null
+          docker rm -f opencart-mysql 2>$null
+          docker network rm opencart-ci-network 2>$null
