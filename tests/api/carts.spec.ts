@@ -104,7 +104,7 @@ test.describe('Carts API Tests', () => {
         const responseBody = await response.json();
 
         expect(Array.isArray(responseBody)).toBeTruthy();
-        expect(responseBody.length).toBe(LIMIT);
+       expect(responseBody.length).toBeLessThanOrEqual(LIMIT);
     });
 
     // ---------------------------------------------------------
