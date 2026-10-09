@@ -10,9 +10,7 @@ Pipeline Stages:
 4. Run Playwright Tests: Executes the selected Playwright test suite with the specified browser and mode (headless or headed).
 5. Post Actions: Archives test reports, publishes JUnit and Allure reports, and cleans up allure-results on success.
 6. Email Notification: Sends an email notification with the build status and links to the reports.
-7. Parameters: Allows users to select the test suite, browser, and mode for the test execution.
-
-*/
+7. Parameters: Allows users to select the test suite, browser, and mode for the test execution
 
 pipeline {
   agent any
@@ -23,7 +21,7 @@ pipeline {
   parameters {
     choice(
       name: 'TEST_SUITE',
-      choices: ['test:end-to-end0', 'test:master', 'test:sanity', 'test:regression', 'test:api', 'test:web', 'test:datadriven'],
+      choices: ['test:end-to-end', 'test:master', 'test:sanity', 'test:regression', 'test:api', 'test:web', 'test:datadriven'],
       description: 'Select the test suite to run'
     )
     choice(
