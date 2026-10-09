@@ -5,16 +5,20 @@ export default defineConfig({
   fullyParallel: true, 
   retries: process.env.CI ? 2 : 0, 
   workers: process.env.CI ? 1 : undefined, 
-  reporter: [ 
-    ["list"], // Detailed console output 
-    // ['line'], // One-line progress output 
-    // ['dot'], // Minimal console output 
-    // ["html", { open: "never", outputFolder: "reports" }], // HTML Report 
-    //['json', { outputFile: 'reports/results.json' }], // JSON Report 
-    // ["junit", { outputFile: "reports/results.xml" }], // JUnit XML Report 
-    // ["./utils/CustomReporter.ts"], // Custom reporter 
-    // ["allure-playwright", { outputFolder: "allure-results" }], // Allure Report 
-     ],
+   
+  reporter: [
+  ["list"],
+  ["html", {
+    open: "never",
+    outputFolder: "reports"
+  }],
+  ["junit", {
+    outputFile: "reports/results.xml"
+  }],
+  ["allure-playwright", {
+    resultsDir: "allure-results"
+  }]
+],
 
     use: { trace: "on-first-retry", 
       screenshot: "only-on-failure", 
