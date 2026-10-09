@@ -17,7 +17,7 @@ const ADMIN_URL = process.env.ADMIN_URL || 'http://localhost/opencart/upload/adm
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 
-test.describe('OpenCart Customer Registration - UI + Admin + DB Validation @master  @db', () => {
+test.describe('OpenCart Customer Registration - UI + Admin + DB Validation @master @end-to-end @db', () => {
 
     test('Register customer, verify in admin portal and MySQL @db', async ({
         page, homePage, registerPage, successPage, adminLoginPage, adminCustomersPage, adminCustomerEditPage
