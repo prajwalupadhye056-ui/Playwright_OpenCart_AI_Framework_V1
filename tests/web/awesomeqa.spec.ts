@@ -9,14 +9,14 @@ test.describe('AwesomeQA E-Commerce Web Tests @awesomeqa', () => {
     test('Search and add Canon EOS 5D to cart @awesomeqa', async ({ page }) => {
 
         // 1. Launch application
-        await test.step('Launch application', async () => {
+        await test.step('1.Launch application', async () => {
             await page.goto(APP_URL);
 
             await expect(page).toHaveTitle(/Your Store/i);
         });
 
         // 2. Search product
-        await test.step('Search for Canon EOS 5D', async () => {
+        await test.step('2.Search for Canon EOS 5D', async () => {
             const searchBox = page.locator('input[name="search"]');
 
             await expect(searchBox).toBeVisible();
@@ -30,7 +30,7 @@ test.describe('AwesomeQA E-Commerce Web Tests @awesomeqa', () => {
         });
 
         // 3. Open product
-        await test.step('Open Canon EOS 5D', async () => {
+        await test.step('3.Open Canon EOS 5D', async () => {
             await page.getByRole('link', { name: 'Canon EOS 5D' }).first().click();
 
             await expect(page.locator('h1')).toHaveText('Canon EOS 5D');
@@ -47,7 +47,7 @@ test.describe('AwesomeQA E-Commerce Web Tests @awesomeqa', () => {
         });
 
         // 5. Add product to cart
-        await test.step('Add product to cart', async () => {
+        await test.step('5.Add product to cart', async () => {
 
             const addToCartButton = page.getByRole('button', {name: 'Add to Cart'});
 
