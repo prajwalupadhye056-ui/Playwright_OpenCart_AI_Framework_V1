@@ -22,7 +22,7 @@ import { RandomDataUtil } from '../../utils/dataGenerator';
 import { Helper } from '../../utils/helper';
 
 test(
-    'End-to-End Shopping Flow @master  @end-to-end @web',
+    'End-to-End Shopping Flow @master @end-to-end @web',
     async ({
         homePage,
         registerPage,
