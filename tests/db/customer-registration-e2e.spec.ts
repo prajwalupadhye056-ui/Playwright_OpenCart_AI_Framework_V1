@@ -46,6 +46,9 @@ test.describe('OpenCart Customer Registration - UI + Admin + DB Validation @mast
             expect(headingText).toContain('Your Account Has Been Created!');
         });
 
+        
+
+        
         await test.step('2) Verify the customer in the Admin Portal', async () => {
             await page.goto(ADMIN_URL);
 
